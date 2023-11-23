@@ -4,6 +4,7 @@ const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 require("dotenv").config();
 const cors = require("cors");
 const jwt = require("jsonwebtoken");
+const stripy = require("stripe")(process.env.STRIPE_PAYMENT_METHODS);
 const port = process.env.PORT || 5000;
 
 //middleware
@@ -37,7 +38,7 @@ async function run() {
       const token = jwt.sign(user, process.env.ACCESS_TOKEN_SECURE, {
         expiresIn: "1h",
       });
-      res.send({token});
+      res.send({ token });
     });
 
     //middleware
@@ -75,27 +76,23 @@ async function run() {
       res.send(result);
     });
 
-    app.get(
-      "/users/admin/:email",
-      verifyToken,
-      async (req, res) => {
-        const email = req.params.email;
-        //AuthProvider er moddhe amn kore user encoded kore set kore deoa hoichilo
-        // const userInfo = { email: currentUser.email };
-        // axiosPublic.post("/jwt", userInfo).then((res) => {
-        if (email !== req.decoded.email) {
-          return res.status(403).send({ message: "forbidden access" });
-        }
-
-        const query = { email: email };
-        const user = await userCollection.findOne(query);
-        let admin = false;
-        if (user) {
-          admin = user?.role === "admin";
-        }
-        res.send({ admin });
+    app.get("/users/admin/:email", verifyToken, async (req, res) => {
+      const email = req.params.email;
+      //AuthProvider er moddhe amn kore user encoded kore set kore deoa hoichilo
+      // const userInfo = { email: currentUser.email };
+      // axiosPublic.post("/jwt", userInfo).then((res) => {
+      if (email !== req.decoded.email) {
+        return res.status(403).send({ message: "forbidden access" });
       }
-    );
+
+      const query = { email: email };
+      const user = await userCollection.findOne(query);
+      let admin = false;
+      if (user) {
+        admin = user?.role === "admin";
+      }
+      res.send({ admin });
+    });
 
     app.post("/users", async (req, res) => {
       const user = req.body;
@@ -117,17 +114,22 @@ async function run() {
       res.send(result);
     });
 
-    app.patch("/users/admin/:id", verifyToken, verifyAdmin, async (req, res) => {
-      const id = req.params.id;
-      const filter = { _id: new ObjectId(id) };
-      const updateDoc = {
-        $set: {
-          role: "admin",
-        },
-      };
-      const result = await userCollection.updateOne(filter, updateDoc);
-      res.send(result);
-    });
+    app.patch(
+      "/users/admin/:id",
+      verifyToken,
+      verifyAdmin,
+      async (req, res) => {
+        const id = req.params.id;
+        const filter = { _id: new ObjectId(id) };
+        const updateDoc = {
+          $set: {
+            role: "admin",
+          },
+        };
+        const result = await userCollection.updateOne(filter, updateDoc);
+        res.send(result);
+      }
+    );
 
     //menu related api
     app.get("/menu", async (req, res) => {
@@ -135,42 +137,42 @@ async function run() {
       res.send(result);
     });
 
-    app.get('/menu/:id', async(req, res)=>{
-      const id= req.params.id;
-      const query = {_id: new ObjectId(id)};
-      const result = await menuCollection.findOne(query)
-      res.send(result)
-    })
+    app.get("/menu/:id", async (req, res) => {
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id) };
+      const result = await menuCollection.findOne(query);
+      res.send(result);
+    });
 
-    app.post('/menu', verifyToken, verifyAdmin, async(req, res)=>{
+    app.post("/menu", verifyToken, verifyAdmin, async (req, res) => {
       const items = req.body;
-      const result = await menuCollection.insertOne(items)
-      res.send(result)
-    })
+      const result = await menuCollection.insertOne(items);
+      res.send(result);
+    });
 
-    app.delete('/menu/:id', verifyToken, verifyAdmin, async(req, res)=>{
+    app.delete("/menu/:id", verifyToken, verifyAdmin, async (req, res) => {
       const id = req.params.id;
-      const query = {_id: new ObjectId(id)}
-      const result = await menuCollection.deleteOne(query)
-      res.send(result)
-    })
+      const query = { _id: new ObjectId(id) };
+      const result = await menuCollection.deleteOne(query);
+      res.send(result);
+    });
 
-    app.patch('/menu/:id', async(req, res)=>{
+    app.patch("/menu/:id", async (req, res) => {
       const id = req.params.id;
-      const query = {_id: new ObjectId(id)}
+      const query = { _id: new ObjectId(id) };
       const item = req.body;
-      const updateDoc ={
+      const updateDoc = {
         $set: {
           name: item.name,
           category: item.category,
           price: item.price,
           recipe: item.recipe,
-          image: item.image
-        }
-      }
-      const result = await menuCollection.updateOne(query, updateDoc)
-      res.send(result)
-    })
+          image: item.image,
+        },
+      };
+      const result = await menuCollection.updateOne(query, updateDoc);
+      res.send(result);
+    });
 
     //reviews api
     app.get("/reviews", async (req, res) => {
@@ -201,8 +203,22 @@ async function run() {
       res.send(result);
     });
 
+    //payment methods
+    app.post("/create-payment-intent", async (req, res) => {
+      const { price } = req.body;
+      const amount = parseInt(price * 100);
 
-   
+      const paymentIntent = await Stripe.paymentIntents.create({
+        amount: amount,
+        currency: "usd",
+        payment_method_types: ["card"],
+      });
+
+      res.send({
+        clientSecret: paymentIntent.client_secret,
+      });
+    });
+
     // Send a ping to confirm a successful connection
     await client.db("admin").command({ ping: 1 });
     console.log(
