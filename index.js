@@ -5,6 +5,14 @@ require("dotenv").config();
 const cors = require("cors");
 const jwt = require("jsonwebtoken");
 const stripy = require("stripe")(process.env.STRIPE_PAYMENT_METHODS);
+const formData = require("form-data");
+const Mailgun = require("mailgun.js");
+const mailgun = new Mailgun(formData);
+const mg = mailgun.client({
+  username: "api",
+  key: process.env.MAIL_GUN_API_KEY,
+});
+
 const port = process.env.PORT || 5000;
 
 //middleware
@@ -25,7 +33,7 @@ const client = new MongoClient(uri, {
 async function run() {
   try {
     // Connect the client to the server	(optional starting in v4.7)
-    await client.connect();
+    // await client.connect();
 
     const userCollection = client.db("tsrDB").collection("users");
     const menuCollection = client.db("tsrDB").collection("menu");
@@ -243,6 +251,25 @@ async function run() {
 
       const deleteResult = await cartCollection.deleteMany(query);
 
+      //send user email about payment confirmation
+      mg.messages
+        .create(process.env.MAIL_SENDING_DOMAIN, {
+          from: "Mailgun Sandbox <postmaster@sandbox6f242256b8474c598ad6994a9093d633.mailgun.org>",
+          to: ["tusharimran789@gmail.com"],
+          subject: "TSR restaurant order confirm",
+          text: "Testing some Mailgun awesomness!",
+          html: `
+          <div>
+            <h2>Thank you for your order</h2>
+            <h4>Your Transaction Id: <strong>${payment.transactionId}</strong></h4>
+            <p>We would like to get your feedback about the food</p>
+          </div>
+          `
+        })
+        .then((msg) => console.log(msg)) // logs response data
+        .catch((err) => console.log(err)); // logs any error`;
+
+
       res.send({ paymentResult, deleteResult });
     });
 
@@ -291,7 +318,8 @@ async function run() {
 
     //using aggregate pipeline
     app.get("/order-stats", verifyToken, verifyAdmin, async (req, res) => {
-        const result = await paymentCollection.aggregate([
+      const result = await paymentCollection
+        .aggregate([
           {
             $unwind: "$menuItemIds",
           },
@@ -316,26 +344,22 @@ async function run() {
           {
             $project: {
               _id: 0,
-              category: '$_id',
-              quantity: '$quantity',
-              revenue: '$revenue'
-            }
-          }
+              category: "$_id",
+              quantity: "$quantity",
+              revenue: "$revenue",
+            },
+          },
+        ])
+        .toArray();
 
-        ]).toArray();
-
-        res.send(result);
-
-
-      })
-      
-
+      res.send(result);
+    });
 
     // Send a ping to confirm a successful connection
-    await client.db("admin").command({ ping: 1 });
-    console.log(
-      "Pinged your deployment. You successfully connected to MongoDB!"
-    );
+    // await client.db("admin").command({ ping: 1 });
+    // console.log(
+    //   "Pinged your deployment. You successfully connected to MongoDB!"
+    // );
   } finally {
     // Ensures that the client will close when you finish/error
     // await client.close();
